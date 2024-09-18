@@ -26,6 +26,7 @@ import {
 import {snakeToCamel} from 'src/app/common/helpers';
 import {filter, tap} from 'rxjs/operators';
 import {translates} from 'src/assets/i18n/translates';
+import {Platform} from '@angular/cdk/platform';
 
 @Injectable({providedIn: 'root'})
 export class AuthStateService {
@@ -34,8 +35,10 @@ export class AuthStateService {
   private claims: UserClaimsModel;
   private localeIsInited = false;
   private defaultLocale = applicationLanguages[1];
+  platformInfo: string;
 
   constructor(
+    private platform: Platform,
     private service: AuthService,
     private translateService: TranslateService,
     private localeService: LocaleService,
@@ -45,6 +48,7 @@ export class AuthStateService {
     public settingsService: AppSettingsService,
     @Inject(MAT_DATE_LOCALE) private dateLocale: BehaviorSubject<string | Locale | null>
   ) {
+    this.platformInfo = this.getPlatformInfo();
     this.selectCurrentUserLanguageId$.subscribe((languageId) => this.currentLanguageId = languageId);
     this.selectCurrentUserClaims$.subscribe((claims) => this.claims = claims);
   }
@@ -73,6 +77,7 @@ export class AuthStateService {
               count: 2
             })
           );
+          this.authStore.dispatch(updateSideMenuOpened({sideMenuIsOpened: !this.isMobilePlatform()}));
           this.selectIsAuth$.pipe( // run after update auth info in store
             filter(x => x === true),
             take(1),
@@ -175,15 +180,6 @@ export class AuthStateService {
     let userLocale: string = this.defaultLocale.locale;
     try {
       userLocale = navigator.language || navigator.languages[0];
-      if (userLocale.includes('en')) {
-        userLocale = 'en-US';
-      } else {
-        if (userLocale.includes('da')) {
-          userLocale = 'da';
-        } else {
-          userLocale = 'en-US';
-        }
-      }
     } catch (e) {
       console.error('Error in logout: ', e);
     }
@@ -210,13 +206,31 @@ export class AuthStateService {
   }
 
   updateUserLocale(locale: string) {
-    const languageId = applicationLanguages.find(x => x.locale === locale).id;
-    this.authStore.dispatch(updateUserLocale({locale: locale, languageId: languageId}));
+    try {
+      if (locale.includes('-')) {
+        locale = locale.split('-')[0];
+      }
+      const languageId = applicationLanguages.find(x => x.locale.split('-')[0] === locale).id;
+      this.authStore.dispatch(updateUserLocale({locale: locale, languageId: languageId}));
+    } catch (e) {
+      console.error('Error in updateUserLocale: ', e);
+      const languageId = applicationLanguages.find(x => x.locale === 'en-US').id;
+      this.authStore.dispatch(updateUserLocale({locale: locale, languageId: languageId}));
+    }
   }
 
   updateCurrentUserLocaleAndDarkTheme(locale: string, darkTheme: boolean) {
-    const languageId = applicationLanguages.find(x => x.locale === locale).id;
-    this.authStore.dispatch(updateCurrentUserLocaleAndDarkTheme({locale: locale, languageId: languageId, darkTheme: darkTheme}));
+    try {
+      if (locale.includes('-')) {
+        locale = locale.split('-')[0];
+      }
+      const languageId = applicationLanguages.find(x => x.locale.split('-')[0] === locale).id;
+      this.authStore.dispatch(updateCurrentUserLocaleAndDarkTheme({locale: locale, languageId: languageId, darkTheme: darkTheme}));
+    } catch (e) {
+      console.error('Error in updateUserLocale: ', e);
+      const languageId = applicationLanguages.find(x => x.locale === 'en-US').id;
+      this.authStore.dispatch(updateCurrentUserLocaleAndDarkTheme({locale: locale, languageId: languageId, darkTheme: darkTheme}));
+    }
   }
 
   updateDarkTheme(darkTheme: boolean) {
@@ -288,5 +302,34 @@ export class AuthStateService {
         return enUS;
       }
     }
+  }
+
+  getPlatformInfo(): string {
+    if (this.platform.ANDROID) {
+      return 'Android';
+    } else if (this.platform.IOS) {
+      return 'iOS';
+    } else if (this.platform.isBrowser) {
+      return this.getDesktopPlatform();
+    } else {
+      return 'Unknown platform';
+    }
+  }
+
+  private getDesktopPlatform(): string {
+    const userAgent = window.navigator.userAgent;
+    if (userAgent.includes('Win')) {
+      return 'Windows';
+    } else if (userAgent.includes('Mac')) {
+      return 'macOS';
+    } else if (userAgent.includes('Linux')) {
+      return 'Linux';
+    } else {
+      return 'Unknown desktop platform';
+    }
+  }
+
+  private isMobilePlatform(): boolean {
+    return this.platform.ANDROID || this.platform.IOS;
   }
 }

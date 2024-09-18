@@ -22,120 +22,78 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-using ClosedXML.Graphics;
-
-namespace eFormAPI.Web.Services.Import;
-
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using ClosedXML.Excel;
-using Export;
-using Infrastructure.Models.Import;
+using eFormAPI.Web.Infrastructure.Models.Import;
+using eFormAPI.Web.Services.Export;
 using Microsoft.Extensions.Logging;
 using Microting.EformAngularFrontendBase.Infrastructure.Const.Import;
 
-public class EformExcelImportService : IEformExcelImportService
+namespace eFormAPI.Web.Services.Import;
+
+public class EformExcelImportService(ILogger<EformExcelExportService> logger) : IEformExcelImportService
 {
-    private readonly ILogger<EformExcelExportService> _logger;
-
-    public EformExcelImportService(ILogger<EformExcelExportService> logger)
-    {
-        _logger = logger;
-    }
-
-
     public List<EformImportExcelModel> EformImport(Stream excelStream)
     {
         try
         {
             var result = new List<EformImportExcelModel>();
-            foreach (var fontFamily in SixLabors.Fonts.SystemFonts.Collection.Families)
-                Console.WriteLine(fontFamily.Name);
-            LoadOptions.DefaultGraphicEngine = new DefaultGraphicEngine("Carlito");
-            var workbook = new XLWorkbook(excelStream);
-            var worksheet = workbook.Worksheet(EformImportExcelConsts.EformsWorksheet);
-            var rows = worksheet.RangeUsed().RowsUsed();
+
+            // Open the spreadsheet document
+            using var document = SpreadsheetDocument.Open(excelStream, false);
+            var workbookPart = document.WorkbookPart;
+            // printe the names of the sheets in the workbook
+            var sheets = workbookPart.Workbook.Descendants<Sheet>();
+            foreach (var asheet in sheets)
+            {
+                Console.WriteLine(asheet.Name);
+            }
+            var sheet = workbookPart.Workbook.Sheets.Elements<Sheet>()
+                .FirstOrDefault(s => s.Name == "Bruttoliste eForm");
+
+            if (sheet == null)
+            {
+                throw new Exception("Worksheet not found.");
+            }
+
+            var worksheetPart = (WorksheetPart)workbookPart.GetPartById(sheet.Id);
+            var rows = worksheetPart.Worksheet.GetFirstChild<SheetData>().Elements<Row>();
 
             foreach (var row in rows.Skip(1)) // Skip header
             {
-                var name = row.Cell(EformImportExcelConsts.EformNameCol).Value.ToString();
-
-                var tag1 = row.Cell(EformImportExcelConsts.Tag1Col).Value.ToString();
-                var tag2 = row.Cell(EformImportExcelConsts.Tag2Col).Value.ToString();
-                var tag3 = row.Cell(EformImportExcelConsts.Tag3Col).Value.ToString();
-                var tag4 = row.Cell(EformImportExcelConsts.Tag4Col).Value.ToString();
-                var tag5 = row.Cell(EformImportExcelConsts.Tag5Col).Value.ToString();
-                var tag6 = row.Cell(EformImportExcelConsts.Tag6Col).Value.ToString();
-                var tag7 = row.Cell(EformImportExcelConsts.Tag7Col).Value.ToString();
-                var tag8 = row.Cell(EformImportExcelConsts.Tag8Col).Value.ToString();
-                var tag9 = row.Cell(EformImportExcelConsts.Tag9Col).Value.ToString();
-                var tag10 = row.Cell(EformImportExcelConsts.Tag10Col).Value.ToString();
-
-                var xml = row.Cell(EformImportExcelConsts.EformXMLCol).Value.ToString();
 
                 var item = new EformImportExcelModel
                 {
-                    Name = name,
-                    EformXML = xml,
-                    ExcelRow = row.RowNumber()
+                    Name = GetCellValue(workbookPart, row, EformImportExcelConsts.EformNameCol),
+                    EformXML = GetCellValue(workbookPart, row, EformImportExcelConsts.EformXMLCol),
+                    ExcelRow = (int)row.RowIndex.Value
                 };
-
-                if (!string.IsNullOrEmpty(tag1))
+                if (item.EformXML == "")
                 {
-                    item.Tags.Add(tag1);
+                    continue;
                 }
 
-                if (!string.IsNullOrEmpty(tag2))
-                {
-                    item.Tags.Add(tag2);
-                }
+                // Add tags
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag1Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag2Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag3Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag4Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag5Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag6Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag7Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag8Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag9Col));
+                AddTagIfNotEmpty(item.Tags, GetCellValue(workbookPart, row, EformImportExcelConsts.Tag10Col));
 
-                if (!string.IsNullOrEmpty(tag3))
-                {
-                    item.Tags.Add(tag3);
-                }
-
-                if (!string.IsNullOrEmpty(tag4))
-                {
-                    item.Tags.Add(tag4);
-                }
-
-                if (!string.IsNullOrEmpty(tag5))
-                {
-                    item.Tags.Add(tag5);
-                }
-
-                if (!string.IsNullOrEmpty(tag6))
-                {
-                    item.Tags.Add(tag6);
-                }
-
-                if (!string.IsNullOrEmpty(tag7))
-                {
-                    item.Tags.Add(tag7);
-                }
-
-                if (!string.IsNullOrEmpty(tag8))
-                {
-                    item.Tags.Add(tag8);
-                }
-
-                if (!string.IsNullOrEmpty(tag9))
-                {
-                    item.Tags.Add(tag9);
-                }
-
-                if (!string.IsNullOrEmpty(tag10))
-                {
-                    item.Tags.Add(tag10);
-                }
-
-                item.ReportH1 = row.Cell(EformImportExcelConsts.ReportH1).Value.ToString();
-                item.ReportH2 = row.Cell(EformImportExcelConsts.ReportH2).Value.ToString();
-                item.ReportH3 = row.Cell(EformImportExcelConsts.ReportH3).Value.ToString();
-                item.ReportH4 = row.Cell(EformImportExcelConsts.ReportH4).Value.ToString();
+                // Report headers
+                item.ReportH1 = GetCellValue(workbookPart, row, EformImportExcelConsts.ReportH1);
+                item.ReportH2 = GetCellValue(workbookPart, row, EformImportExcelConsts.ReportH2);
+                item.ReportH3 = GetCellValue(workbookPart, row, EformImportExcelConsts.ReportH3);
+                item.ReportH4 = GetCellValue(workbookPart, row, EformImportExcelConsts.ReportH4);
 
                 result.Add(item);
             }
@@ -144,8 +102,60 @@ public class EformExcelImportService : IEformExcelImportService
         }
         catch (Exception e)
         {
-            _logger.LogError(e, e.Message);
+            logger.LogError(e, e.Message);
             throw;
+        }
+    }
+
+    private string GetCellValue(WorkbookPart workbookPart, Row row, int columnIndex)
+    {
+        // Get the column letter for the given columnIndex (e.g., A, B, C)
+        var columnLetter = GetColumnLetter(columnIndex);
+
+        // Create the cell reference (e.g., A1, B1, C1)
+        var cellReference = columnLetter + row.RowIndex;
+
+        // Find the cell with the matching CellReference
+        var cell = row.Elements<Cell>().FirstOrDefault(c => c.CellReference.Value == cellReference);
+
+        if (cell == null || cell.CellValue == null)
+        {
+            return string.Empty; // Handle empty or missing cells
+        }
+
+        // If the cell is using a Shared String Table (most string values are stored here)
+        if (cell.DataType != null && cell.DataType.Value == CellValues.SharedString)
+        {
+            var sharedStringTablePart = workbookPart.GetPartsOfType<SharedStringTablePart>().FirstOrDefault();
+            if (sharedStringTablePart != null)
+            {
+                var sharedStringTable = sharedStringTablePart.SharedStringTable;
+                return sharedStringTable.ElementAt(int.Parse(cell.CellValue.Text)).InnerText;
+            }
+        }
+
+        // Return the cell value directly for non-shared strings
+        return cell.CellValue.Text;
+    }
+
+    private string GetColumnLetter(int columnIndex)
+    {
+        string columnLetter = "";
+        while (columnIndex > 0)
+        {
+            int modulo = (columnIndex - 1) % 26;
+            columnLetter = Convert.ToChar(65 + modulo) + columnLetter;
+            columnIndex = (columnIndex - modulo) / 26;
+        }
+        return columnLetter;
+    }
+
+    // Helper method to add tags to the list if not empty
+    private void AddTagIfNotEmpty(List<string> tags, string tagValue)
+    {
+        if (!string.IsNullOrEmpty(tagValue))
+        {
+            tags.Add(tagValue);
         }
     }
 }
